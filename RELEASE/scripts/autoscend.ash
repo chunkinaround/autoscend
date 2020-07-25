@@ -81,8 +81,13 @@ import <autoscend/quests/level_13.ash>
 import <autoscend/quests/level_any.ash>
 import <autoscend/quests/optional.ash>
 
-void initializeSettings()
-{
+void initializeSettings() {
+
+	// called once per ascension on the first launch of the script.
+	// should not handle anything other than intialising properties etc.
+	// all paths that have extra settings should call their path specific
+	// initialise function at the end of this function (may override properties set in here).
+
 	if(my_ascensions() <= get_property("auto_doneInitialize").to_int())
 	{
 		return;
@@ -105,11 +110,7 @@ void initializeSettings()
 		}
 	}
 
-	if(canChangeToFamiliar($familiar[Crimbo Shrub]))
-	{
-		use_familiar($familiar[Crimbo Shrub]);
-		use_familiar($familiar[none]);
-	}
+	auto_spoonTuneConfirm();
 
 	string pool = visit_url("questlog.php?which=3");
 	matcher my_pool = create_matcher("a skill level of (\\d+) at shooting pool", pool);
@@ -203,24 +204,6 @@ void initializeSettings()
 	remove_property("auto_minedCells");
 	beehiveConsider();
 
-	auto_sourceTerminalEducate($skill[Extract], $skill[Digitize]);
-	if(contains_text(get_property("sourceTerminalEnquiryKnown"), "monsters.enq") && (auto_my_path() == "Pocket Familiars"))
-	{
-		auto_sourceTerminalRequest("enquiry monsters.enq");
-	}
-	else if(contains_text(get_property("sourceTerminalEnquiryKnown"), "familiar.enq") && pathAllowsFamiliar())
-	{
-		auto_sourceTerminalRequest("enquiry familiar.enq");
-	}
-	else if(contains_text(get_property("sourceTerminalEnquiryKnown"), "stats.enq"))
-	{
-		auto_sourceTerminalRequest("enquiry stats.enq");
-	}
-	else if(contains_text(get_property("sourceTerminalEnquiryKnown"), "protect.enq"))
-	{
-		auto_sourceTerminalRequest("enquiry protect.enq");
-	}
-
 	eudora_initializeSettings();
 	hr_initializeSettings();
 	awol_initializeSettings();
@@ -242,6 +225,15 @@ void initializeSettings()
 	bhy_initializeSettings();
 
 	set_property("auto_doneInitialize", my_ascensions());
+}
+
+void initializeSession() {
+	// called once every time the script is started.
+	// anything that needs to be set only for the duration the script is running
+	// should be set in here.
+
+	ed_initializeSession();
+	bat_initializeSession();
 }
 
 int auto_advToReserve()
@@ -628,8 +620,6 @@ int handlePulls(int day)
 	{
 		use(1, $item[Astral Hot Dog Dinner]);
 	}
-
-	initializeSettings();
 
 	if(in_hardcore())
 	{
@@ -1135,6 +1125,24 @@ void initializeDay(int day)
 	{
 		if(get_property("auto_day_init").to_int() < 1)
 		{
+			auto_sourceTerminalEducate($skill[Extract], $skill[Digitize]);
+			if(contains_text(get_property("sourceTerminalEnquiryKnown"), "monsters.enq") && (auto_my_path() == "Pocket Familiars"))
+			{
+				auto_sourceTerminalRequest("enquiry monsters.enq");
+			}
+			else if(contains_text(get_property("sourceTerminalEnquiryKnown"), "familiar.enq") && pathAllowsFamiliar())
+			{
+				auto_sourceTerminalRequest("enquiry familiar.enq");
+			}
+			else if(contains_text(get_property("sourceTerminalEnquiryKnown"), "stats.enq"))
+			{
+				auto_sourceTerminalRequest("enquiry stats.enq");
+			}
+			else if(contains_text(get_property("sourceTerminalEnquiryKnown"), "protect.enq"))
+			{
+				auto_sourceTerminalRequest("enquiry protect.enq");
+			}
+
 			//big rock is what mafia returns when you have no dwelling.
 			if(item_amount($item[Newbiesport&trade; tent]) > 0 && auto_is_valid($item[Newbiesport&trade; tent]) && get_dwelling() == $item[big rock])
 			{
@@ -3102,11 +3110,14 @@ void resetState() {
 	//We use boolean instead of adventure count because of free combats.
 	
 	set_property("auto_doCombatCopy", "no");
-	set_property("_auto_thisLoopHandleFamiliar", false);	//have we called handleFamiliar this loop
-	set_property("auto_disableFamiliarChanging", false);	//disable autoscend making changes to familiar
-	set_property("auto_familiarChoice", "");				//which familiar do we want to switch to during pre_adventure
+	set_property("_auto_thisLoopHandleFamiliar", false); // have we called handleFamiliar this loop
+	set_property("auto_disableAdventureHandling", false); // used to stop auto_pre_adv and auto_post_adv from doing anything.
+	set_property("auto_disableFamiliarChanging", false); // disable autoscend making changes to familiar
+	set_property("auto_familiarChoice", ""); // which familiar do we want to switch to during pre_adventure
 	set_property("choiceAdventure1387", -1); // using the force non-combat
 	set_property("_auto_tunedElement", ""); // Flavour of Magic elemental alignment
+
+	set_property("auto_januaryToteAcquireCalledThisTurn", false); // january tote item switching
 
 	horseDefault(); // horsery tracking
 
@@ -3555,17 +3566,7 @@ void auto_begin()
 	auto_log_info("Turns played: " + my_turncount() + " current adventures: " + my_adventures());
 	auto_log_info("Current Ascension: " + auto_my_path());
 
-	set_property("auto_disableAdventureHandling", false);
-	set_property("auto_disableFamiliarChanging", false);
-
-	auto_spoonTuneConfirm();
-
 	settingFixer();
-	resetMaximize();
-
-	uneffect($effect[Ode To Booze]);
-	handlePulls(my_daycount());
-	initializeDay(my_daycount());
 
 	backupSetting("promptAboutCrafting", 0);
 	backupSetting("requireBoxServants", false);
@@ -3606,22 +3607,9 @@ void auto_begin()
 		visit_url("account.php?am=1&pwd=&action=flag_compactchar&value=0&ajax=0", true);
 	}
 
-	if (!get_property("_canSeekBirds").to_boolean() &&
-		(0 < item_amount($item[Bird-a-Day calendar])) &&
-		(auto_is_valid($item[Bird-a-Day calendar])))
-	{
-		auto_log_info("What a beautiful morning! What's today's bird?");
-		use(1, $item[Bird-a-Day calendar]);
-	}
+	initializeSettings(); // sets properties (once) for the entire run (all paths).
 
-	ed_initializeSession();
-	bat_initializeSession();
-
-	if(my_daycount() > 1)
-	{
-		resetMaximize();
-		equipBaseline();
-	}
+	initializeSession(); // sets properties for the current session (should all be reset when we're done)
 
 	if(my_familiar() == $familiar[Stooper])
 	{
@@ -3629,7 +3617,15 @@ void auto_begin()
 		familiar fam = (is100FamRun() ? get_property("auto_100familiar").to_familiar() : $familiar[none]);
 		use_familiar(fam);
 	}
-	dailyEvents();
+
+	// =================================================
+	// Actually doing stuff should start from here down.
+	// =================================================
+
+	initializeDay(my_daycount());
+	handlePulls(my_daycount());
+
+	dailyEvents(); // All once-per-day stuff (which doesn't spend adventures) should go in here
 
 	// Try to consume something if not enough adventures to get going
 	if (!auto_unreservedAdvRemaining())
